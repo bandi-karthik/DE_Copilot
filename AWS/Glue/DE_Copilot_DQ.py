@@ -7,27 +7,29 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 import pyspark
 import pyspark.sql.functions as f
+from awsglue.utils import getResolvedOptions
 
 
 ## @params: [JOB_NAME]
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+args = getResolvedOptions(sys.argv, ['JOB_NAME','table'])
+
+database = 'copilot_demo'
+table = args['table']
+input_path = f's3://de-copilot-s3/data/incoming/{table}.csv'
 
 sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args['JOB_NAME'], args)
-database = 'copilot_demo'
 bucket = 'de-copilot-s3'
-table = 'employees_test'
 key = f'contracts/{table}.json'
-input_path = 's3://de-copilot-s3/data/incoming/employees_test.csv'
+
+
 valid_records_output = f's3://de-copilot-s3/data/processed/{table}/'
 invalid_records_output = f's3://de-copilot-s3/data/error/{table}_error/'
 
 def dq_rules(bucket,table,key):
-
-    
     # Read the incoming file 
         
     df = spark.read.option('header','true').option('inferschema','false').csv(input_path)
@@ -71,8 +73,6 @@ def dq_rules(bucket,table,key):
             "spark_exp": spark_exp
         })
 
-            
-        
         
     # load and build the rules
         
@@ -82,6 +82,8 @@ def dq_rules(bucket,table,key):
     contracts = json.loads(contracts)
     
     all_rules = contracts.get('data_quality',{}).get('rules',[])
+    if len(all_rules) ==0:
+        return f'There are No Data quality rules for the {table}, Please Check!'
     # add the dtype issues to the llm rule 
     all_rules.extend(dtype_rules)
     
