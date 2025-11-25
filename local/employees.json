@@ -1,0 +1,182 @@
+{
+  "data_quality": {
+    "rules": [
+      {
+        "column": "__TABLE__",
+        "rule_type": "pk",
+        "condition": "emp_id",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "The 'emp_id' column must be unique across all rows as it is the primary key.",
+        "spark_exp": "(count(1) OVER (PARTITION BY emp_id)) = 1"
+      },
+      {
+        "column": "emp_id",
+        "rule_type": "not_null",
+        "condition": "N/A",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Employee ID is a mandatory field and cannot be null.",
+        "spark_exp": "emp_id IS NOT NULL"
+      },
+      {
+        "column": "emp_id",
+        "rule_type": "custom_sql",
+        "condition": "Must be a positive integer with a maximum length of 5 digits.",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Based on comments, emp_id must be positive and have a max length of 5.",
+        "spark_exp": "emp_id > 0 AND length(cast(emp_id as string)) <= 5"
+      },
+      {
+        "column": "emp_name",
+        "rule_type": "not_empty",
+        "condition": "N/A",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Employee name is a mandatory field and cannot be null or empty, based on business rule in comments.",
+        "spark_exp": "emp_name IS NOT NULL AND length(trim(emp_name)) > 0"
+      },
+      {
+        "column": "salary",
+        "rule_type": "min",
+        "condition": "0",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "If salary is provided, it must be a non-negative value.",
+        "spark_exp": "salary IS NULL OR salary >= 0"
+      },
+      {
+        "column": "department",
+        "rule_type": "not_empty",
+        "condition": "N/A",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "If department is provided, it should not be an empty or whitespace-only string.",
+        "spark_exp": "department IS NULL OR length(trim(department)) > 0"
+      },
+      {
+        "column": "joining_date",
+        "rule_type": "not_null",
+        "condition": "N/A",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Joining date is a mandatory field and cannot be null, based on business rule in comments.",
+        "spark_exp": "joining_date IS NOT NULL"
+      },
+      {
+        "column": "joining_date",
+        "rule_type": "max",
+        "condition": "current_date",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Joining date cannot be in the future.",
+        "spark_exp": "joining_date IS NULL OR joining_date <= current_date()"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "test_pk_uniqueness_emp_id",
+      "sql": "SELECT emp_id, COUNT(*) FROM \"copilot_demo\".\"employees\" GROUP BY emp_id HAVING COUNT(*) > 1",
+      "description": "Ensures every 'emp_id' is unique. This query should return 0 rows."
+    },
+    {
+      "name": "test_not_null_emp_id",
+      "sql": "SELECT COUNT(1) FROM \"copilot_demo\".\"employees\" WHERE emp_id IS NULL",
+      "description": "Checks for any null values in the 'emp_id' column. The result should be 0."
+    },
+    {
+      "name": "test_length_emp_id",
+      "sql": "SELECT COUNT(1) FROM \"copilot_demo\".\"employees\" WHERE LENGTH(CAST(emp_id AS VARCHAR)) > 5",
+      "description": "Checks that the length of 'emp_id' does not exceed 5 digits. The result should be 0."
+    },
+    {
+      "name": "test_not_null_or_empty_emp_name",
+      "sql": "SELECT COUNT(1) FROM \"copilot_demo\".\"employees\" WHERE emp_name IS NULL OR TRIM(emp_name) = ''",
+      "description": "Verifies that 'emp_name' is never null or an empty string, as per business rules. The result should be 0."
+    },
+    {
+      "name": "test_non_negative_salary",
+      "sql": "SELECT COUNT(1) FROM \"copilot_demo\".\"employees\" WHERE salary < 0",
+      "description": "Ensures that all 'salary' values, when present, are non-negative. The result should be 0."
+    },
+    {
+      "name": "test_not_null_joining_date",
+      "sql": "SELECT COUNT(1) FROM \"copilot_demo\".\"employees\" WHERE joining_date IS NULL",
+      "description": "Verifies that 'joining_date' is never null, as per business rules. The result should be 0."
+    },
+    {
+      "name": "test_future_joining_date",
+      "sql": "SELECT COUNT(1) FROM \"copilot_demo\".\"employees\" WHERE joining_date > current_date",
+      "description": "Ensures no 'joining_date' is set to a future date. The result should be 0."
+    }
+  ],
+  "docs_markdown": "# Table: employees\n\n**Database:** `copilot_demo`\n\nThis table contains information about employees, including their ID, name, salary, department, and joining date.\n\n## Table Properties\n\n| Property      | Value                 |\n|---------------|-----------------------|\n| S3 Location   | unknown               |\n| File Format   | unknown               |\n| Partition Keys| None                  |\n| Primary Key   | `emp_id`              |\n\n## Column Definitions\n\n| Column         | Data Type | Nullable (Physical) | Description                                                                                             |\n|----------------|-----------|---------------------|---------------------------------------------------------------------------------------------------------|\n| `emp_id`       | `int`     | false               | Unique identifier for each employee. This is the primary key and must have a maximum length of 5 digits.  |\n| `emp_name`     | `string`  | true                | The full name of the employee. **Business Rule:** This column is logically required and cannot be null or empty. |\n| `salary`       | `double`  | true                | The employee's salary. This column contains PII.                                                        |\n| `department`   | `string`  | true                | The department the employee belongs to.                                                                 |\n| `joining_date` | `date`    | true                | The date the employee joined the company. **Business Rule:** This column is logically required and cannot be null. |",
+  "suggestions": [
+    {
+      "area": "schema_design",
+      "type": "SUGGESTION_ONLY",
+      "description": "The physical schema for 'emp_name' and 'joining_date' is nullable, but business comments indicate they are required. Consider altering the table DDL to enforce NOT NULL constraints at the source for better data integrity.",
+      "rule": {
+        "column": "emp_name, joining_date",
+        "rule_type": "not_null",
+        "condition": "DDL should be altered to NOT NULL",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "Align physical DDL with business rules to prevent invalid nulls at the storage layer.",
+        "spark_exp": "N/A",
+        "sql_test": "N/A",
+        "notes": "This change would make the physical schema consistent with the stated business requirements."
+      }
+    },
+    {
+      "area": "business_rule",
+      "type": "SUGGESTION_ONLY",
+      "description": "Once data is available, define a fixed list of allowed values for the 'department' column to ensure consistency and prevent data entry errors.",
+      "rule": {
+        "column": "department",
+        "rule_type": "allowed_values",
+        "condition": "['HR', 'Engineering', 'Sales', 'Marketing', ...]",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Department name must be one of the predefined official department names.",
+        "spark_exp": "department IS NULL OR department IN ('HR', 'Engineering', 'Sales', 'Marketing')",
+        "sql_test": "SELECT DISTINCT department FROM \"copilot_demo\".\"employees\" WHERE department NOT IN ('HR', 'Engineering', 'Sales', 'Marketing')",
+        "notes": "The list of allowed values should be confirmed with business stakeholders."
+      }
+    },
+    {
+      "area": "pii",
+      "type": "SUGGESTION_ONLY",
+      "description": "The 'emp_name' and 'salary' columns contain Personally Identifiable Information (PII). Ensure appropriate data masking, tokenization, or access controls are applied in downstream processing and non-production environments.",
+      "rule": {
+        "column": "emp_name, salary",
+        "rule_type": "custom_sql",
+        "condition": "Apply masking or restricted access.",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "Protect sensitive employee data according to company governance policies.",
+        "spark_exp": "N/A",
+        "sql_test": "N/A",
+        "notes": "This is a governance and security suggestion for human review and implementation in downstream systems."
+      }
+    },
+    {
+      "area": "dq_rule",
+      "type": "SUGGESTION_ONLY",
+      "description": "Implement a table-level check to monitor for significant changes in row count between loads, which could indicate an incomplete or erroneous data feed.",
+      "rule": {
+        "column": "__TABLE__",
+        "rule_type": "custom_sql",
+        "condition": "Row count change must be within +/- 20% of historical average.",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "Detects anomalous increases or decreases in the total number of employee records.",
+        "spark_exp": "N/A",
+        "sql_test": "/* This requires historical metrics and would be run at the pipeline level */",
+        "notes": "This is a pipeline-level check, not a row-level rule. The threshold (20%) should be tuned."
+      }
+    }
+  ]
+}

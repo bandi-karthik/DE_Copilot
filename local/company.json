@@ -1,0 +1,177 @@
+{
+  "data_quality": {
+    "rules": [
+      {
+        "column": "__TABLE__",
+        "rule_type": "pk",
+        "condition": "company_id",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "The 'company_id' column is the primary key and all values must be unique.",
+        "spark_exp": "true"
+      },
+      {
+        "column": "__TABLE__",
+        "rule_type": "fk",
+        "condition": "employee_name REFERENCES companees(emp_name)",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "If 'employee_name' is not null, it must exist in the referenced table 'companees'. Misspelling in comment noted.",
+        "spark_exp": "true"
+      },
+      {
+        "column": "company_id",
+        "rule_type": "not_null",
+        "condition": "IS NOT NULL",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Primary key 'company_id' cannot be null.",
+        "spark_exp": "company_id IS NOT NULL"
+      },
+      {
+        "column": "company_id",
+        "rule_type": "min",
+        "condition": "> 0",
+        "severity": "ERROR",
+        "action": "DROP_ROW",
+        "description": "Primary key 'company_id' must be a positive integer.",
+        "spark_exp": "company_id > 0"
+      },
+      {
+        "column": "company_name",
+        "rule_type": "custom_sql",
+        "condition": "Must not be null or an empty/whitespace string",
+        "severity": "ERROR",
+        "action": "DROP_ROW",
+        "description": "Based on business rule comment 'there will be no company without a name', this field is required and cannot be empty.",
+        "spark_exp": "company_name IS NOT NULL AND length(trim(company_name)) > 0"
+      },
+      {
+        "column": "head_count",
+        "rule_type": "min",
+        "condition": ">= 0",
+        "severity": "ERROR",
+        "action": "DROP_ROW",
+        "description": "If present, 'head_count' must be a non-negative integer.",
+        "spark_exp": "head_count IS NULL OR head_count >= 0"
+      },
+      {
+        "column": "employee_name",
+        "rule_type": "not_empty",
+        "condition": "If not null, must not be an empty/whitespace string",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "If 'employee_name' is provided, it cannot be an empty string.",
+        "spark_exp": "employee_name IS NULL OR length(trim(employee_name)) > 0"
+      },
+      {
+        "column": "established",
+        "rule_type": "max",
+        "condition": "<= current_date()",
+        "severity": "ERROR",
+        "action": "DROP_ROW",
+        "description": "The 'established' date cannot be in the future.",
+        "spark_exp": "established IS NULL OR established <= current_date()"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "test_pk_uniqueness_company_id",
+      "sql": "SELECT company_id, COUNT(*) FROM copilot_demo.company GROUP BY company_id HAVING COUNT(*) > 1",
+      "description": "Verifies that the primary key 'company_id' is unique across the entire table. Should return 0 rows."
+    },
+    {
+      "name": "test_not_null_company_id",
+      "sql": "SELECT COUNT(*) AS failing_rows FROM copilot_demo.company WHERE company_id IS NULL",
+      "description": "Verifies that the primary key 'company_id' is never null. Should return a count of 0."
+    },
+    {
+      "name": "test_not_null_or_empty_company_name",
+      "sql": "SELECT COUNT(*) AS failing_rows FROM copilot_demo.company WHERE company_name IS NULL OR trim(company_name) = ''",
+      "description": "Verifies that 'company_name' is never null or empty, based on the business rule. Should return a count of 0."
+    },
+    {
+      "name": "test_non_negative_head_count",
+      "sql": "SELECT COUNT(*) AS failing_rows FROM copilot_demo.company WHERE head_count < 0",
+      "description": "Verifies that 'head_count', when present, is not a negative number. Should return a count of 0."
+    },
+    {
+      "name": "test_future_date_established",
+      "sql": "SELECT COUNT(*) AS failing_rows FROM copilot_demo.company WHERE established > current_date",
+      "description": "Verifies that there are no 'established' dates in the future. Should return a count of 0."
+    },
+    {
+      "name": "test_fk_employee_name_referential_integrity",
+      "sql": "SELECT COUNT(c.employee_name) AS failing_rows FROM copilot_demo.company c LEFT JOIN copilot_demo.companees p ON c.employee_name = p.emp_name WHERE c.employee_name IS NOT NULL AND p.emp_name IS NULL",
+      "description": "Checks for 'employee_name' values that do not exist in the parent table 'companees'. Should return a count of 0."
+    }
+  ],
+  "docs_markdown": "# Table: company\n\n**Database:** `copilot_demo`\n\nThis table contains information about companies, including their identifiers, employee counts, and establishment dates.\n\n## Columns\n\n| Column Name    | Data Type | Nullable | Description                                  | Key/Constraint     |\n|----------------|-----------|----------|----------------------------------------------|--------------------|\n| `company_id`   | `int`     | false    | primary_key                                  | **Primary Key**    |\n| `company_name` | `string`  | true     | there will be no company without a name      | Logically Required |\n| `head_count`   | `int`     | true     | count of employees in the company            |                    |\n| `employee_name`| `string`  | true     | FK : companees(emp_name)                     | **Foreign Key**    |\n| `established`  | `date`    | true     | The date the company was established.        |                    |\n\n## Table Properties\n\n| Property      | Value   |\n|---------------|---------|\n| Row Count     | 0       |\n| Partition Keys| unknown |\n| File Format   | unknown |\n| S3 Location   | unknown |\n",
+  "suggestions": [
+    {
+      "area": "schema_design",
+      "type": "SUGGESTION_ONLY",
+      "description": "The foreign key 'employee_name' uses a string type. For better performance and data integrity, consider using a surrogate integer key (e.g., 'employee_id') for joins.",
+      "rule": {
+        "column": "__TABLE__",
+        "rule_type": "fk",
+        "condition": "employee_id REFERENCES companees(employee_id)",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "Suggests replacing the string-based foreign key with a more robust integer-based key.",
+        "spark_exp": "true",
+        "sql_test": "N/A",
+        "notes": "This would require a schema change in both this table and the referenced 'companees' table."
+      }
+    },
+    {
+      "area": "pii",
+      "type": "SUGGESTION_ONLY",
+      "description": "The 'employee_name' column appears to contain Personally Identifiable Information (PII). Ensure it is properly masked or tokenized in downstream analytical environments.",
+      "rule": {
+        "column": "employee_name",
+        "rule_type": "custom_sql",
+        "condition": "Column should be masked or tokenized in non-production environments",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "Governance rule to protect PII.",
+        "spark_exp": "true",
+        "sql_test": "N/A",
+        "notes": "This is a governance and access control suggestion, not a row-level data quality rule."
+      }
+    },
+    {
+      "area": "business_rule",
+      "type": "SUGGESTION_ONLY",
+      "description": "Consider a stricter business rule that 'head_count' must be greater than zero. A value of zero might be valid but could also indicate incomplete data for an active company.",
+      "rule": {
+        "column": "head_count",
+        "rule_type": "min",
+        "condition": "> 0",
+        "severity": "WARNING",
+        "action": "WARN",
+        "description": "If present, 'head_count' should be greater than 0.",
+        "spark_exp": "head_count IS NULL OR head_count > 0",
+        "sql_test": "SELECT COUNT(*) FROM copilot_demo.company WHERE head_count = 0",
+        "notes": "This rule might be too strict, as a company could temporarily have 0 employees. Requires business validation."
+      }
+    },
+    {
+      "area": "dq_rule",
+      "type": "SUGGESTION_ONLY",
+      "description": "Add a check for data freshness to ensure the pipeline is running on schedule and the data is not stale.",
+      "rule": {
+        "column": "__TABLE__",
+        "rule_type": "custom_sql",
+        "condition": "Data should be updated within the last 24 hours.",
+        "severity": "ERROR",
+        "action": "FAIL_JOB",
+        "description": "Checks if the latest data partition or load timestamp is recent.",
+        "spark_exp": "true",
+        "sql_test": "SELECT CASE WHEN MAX(load_timestamp) < date_add('hour', -24, current_timestamp) THEN 1 ELSE 0 END AS failing_rows FROM table_metadata",
+        "notes": "This requires adding a 'load_timestamp' column or tracking metadata externally."
+      }
+    }
+  ]
+}
