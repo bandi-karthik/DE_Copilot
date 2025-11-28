@@ -151,8 +151,9 @@ def dq_rules(bucket,table,key):
                 
     df_valid = df_valid.select(list(dtypes_check.keys()))
     
-    df_valid.write.format('parquet').option('path',valid_records_output).mode('overwrite').saveAsTable(f'{database}.{table}')
-    df_invalid.write.format('parquet').option('path',invalid_records_output).mode('overwrite').saveAsTable(f'{database}.{table}_error')
+    #df_valid.write.format('parquet').option('path',valid_records_output).mode('overwrite').saveAsTable(f'{database}.{table}')
+    df_valid.write.format('parquet').mode('append').option('path',valid_records_output).insertInto(f'{database}.{table}')
+    df_invalid.write.format('parquet').option('path',invalid_records_output).mode('append').saveAsTable(f'{database}.{table}_error')
         
     job.commit()
     
