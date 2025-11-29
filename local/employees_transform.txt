@@ -1,0 +1,6 @@
+select i.*,
+case when t.emp_id is not null then 'duplicate_record' else '' end as reason,
+case when t.emp_id is not null then 'ERROR' else 'GOOD' end as dq_severity,
+case when t.emp_id is not null then 'N' else '' end as reprocess_ind
+from incoming i
+left join database.table t on i.emp_id = t.emp_id;
