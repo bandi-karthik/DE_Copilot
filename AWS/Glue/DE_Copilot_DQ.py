@@ -25,6 +25,7 @@ job.init(args['JOB_NAME'], args)
 bucket = 'de-copilot-s3'
 key = f'contracts/{table}.json'
 
+s3_client = boto3.client('s3')
 
 valid_records_output = f's3://de-copilot-s3/data/processed/{table}/'
 invalid_records_output = f's3://de-copilot-s3/data/error/{table}_error/'
@@ -33,9 +34,30 @@ def dq_rules(bucket,table,key):
     # Read the incoming file 
         
     df = spark.read.option('header','true').option('inferschema','false').csv(input_path)
+    target_columns = df.columns
     
+    try:
+        #s3://de-copilot-s3/transformations/employees_transform.txt
+        ### ETL Transformations ### 
+        df.createOrReplaceTempView('incoming')
+        sql = s3_client.get_object(Bucket=bucket, Key=f'transformations/{table}_transform.txt')
+        sql = sql['Body'].read().decode('utf-8')
+        sql =sql.replace('database.table',f'{database}.{table}')
+    
+        df_transformed = spark.sql(sql)
+        df = df_transformed.filter(f.col('dq_severity_code')=='GOOD').select(target_columns)
+        
+        df_etl_error = df_transformed.filter(f.col('dq_severity_code')=='ERROR')
+    except s3_client.exceptions.NoSuchKey:
+        print(f'No transformations found for {table}')
+        # df_etl_error = spark.createDataFrame([], df.schema).withColumn("Reason", f.array(f.lit(""))).withColumn("DQ_severity", f.array(f.lit("")))\
+        #                     .withColumn("Reprocess_IND", f.lit(""))
+                            
+    except Exception as e:
+        print('Error in transformations', {str(e)})
+        raise e
+
     # data type checks 
-    
     dtypes_check = {}
     dtype_rules = []
     
@@ -75,8 +97,7 @@ def dq_rules(bucket,table,key):
 
         
     # load and build the rules
-        
-    s3_client = boto3.client('s3')
+    
     contracts = s3_client.get_object(Bucket = bucket, Key = key)
     contracts = contracts['Body'].read().decode('utf-8')
     contracts = json.loads(contracts)
@@ -124,6 +145,25 @@ def dq_rules(bucket,table,key):
     
     df_invalid = df_invalid.withColumn('Reprocess_IND', f.when(f.array_contains(f.col('DQ_severity'), 'ERROR'), f.lit('N')).otherwise(f.lit('Y')))
     
+    
+    
+    # appending the ETL errors to the final df_invalid which is build on the data contracts DQ and the dtype issues.
+    
+    try:
+        invalid_columns = df_invalid.columns # all main columns for error table
+        #print('df_invalid_columns', invalid_columns)
+            
+        df_etl_error = df_etl_error.withColumn("Reason", f.array(f.col("reason_code"))).withColumn("DQ_severity", f.array(f.col("dq_severity_code"))) \
+                .withColumn("Reprocess_IND", f.col("reprocess_ind_code")).drop("reason_code", "dq_severity_code", "reprocess_ind_code") # creatng arrays to maintain the format and dropping the transformation columns
+                
+        #print('df_etl_error columns', df_etl_error.columns)
+                
+        df_invalid = df_invalid.unionByName(df_etl_error.select(invalid_columns))
+    except Exception as e:
+        print('Error in df_etl_error', {str(e)})
+        raise e
+    
+    
     # date convertion
     
     for col,d_type in dtypes_check.items():
@@ -150,6 +190,7 @@ def dq_rules(bucket,table,key):
             df_valid = df_valid.withColumn(col_name, f.col(col_name).cast(cast_type))
                 
     df_valid = df_valid.select(list(dtypes_check.keys()))
+    
     
     #df_valid.write.format('parquet').option('path',valid_records_output).mode('overwrite').saveAsTable(f'{database}.{table}')
     df_valid.write.format('parquet').mode('append').option('path',valid_records_output).insertInto(f'{database}.{table}')
